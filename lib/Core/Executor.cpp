@@ -328,9 +328,9 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
     : Interpreter(opts), kmodule(0), interpreterHandler(ih), searcher(0),
       externalDispatcher(new ExternalDispatcher(ctx)), statsTracker(0),
       pathWriter(0), symPathWriter(0), specialFunctionHandler(0),
-      processTree(0), replayKTest(0), replayPath(0), usingSeeds(0),
-      atMemoryLimit(false), inhibitForking(false), haltExecution(false),
-      ivcEnabled(false),
+      processTree(0), replayKTest(0), replayPath(0), replayUserPath(0), 
+      usingSeeds(0), atMemoryLimit(false), inhibitForking(false),
+      haltExecution(false), ivcEnabled(false),
       coreSolverTimeout(MaxCoreSolverTime != 0 && MaxInstructionTime != 0
                             ? std::min(MaxCoreSolverTime, MaxInstructionTime)
                             : std::max(MaxCoreSolverTime, MaxInstructionTime)),
@@ -790,6 +790,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     terminateStateEarly(current, "Query timed out (fork).");
     return StatePair(0, 0);
   }
+  const KInstruction *target = current.pc;
+  const InstructionInfo &ii = *target->info;
 
   if (!isSeeding) {
     if (replayPath && !isInternal) {
@@ -809,6 +811,35 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
         } else  {
           res = Solver::False;
           addConstraint(current, Expr::createIsZero(condition));
+        }
+      }
+    } else if (replayUserPath && !isInternal) {
+      std::string posix("POSIX"), uclibc("uclibc"), runtime("runtime");
+      if (ii.file.find(posix) == std::string::npos && ii.file.find(uclibc) == std::string::npos && ii.file.find(runtime) == std::string::npos) {
+        // current branch is in user defined files
+        bool branch = (*replayUserPath)[replayPosition++];
+        if (res == Solver::True) {
+          printf("%s:%d\n", ii.file.c_str(), ii.line);
+          assert(branch && "hit invalid branch in replay user path mode");
+        } else if (res == Solver::False) {
+          printf("%s:%d\n", ii.file.c_str(), ii.line);
+          assert(!branch && "hit invalid branch in replay user path mode");
+        } else {
+          printf("[symbolic]%s:%d\n", ii.file.c_str(), ii.line);
+          if (branch) {
+            res = Solver::True;
+            addConstraint(current, condition);
+          } else {
+            res = Solver::False;
+            addConstraint(current, Expr::createIsZero(condition));
+          }
+        }
+      } else {
+        // current branch is in uclibc or POSIX
+        if (res == Solver::Unknown) {
+          // trivially assert True
+          res = Solver::True;
+          addConstraint(current, condition);
         }
       }
     } else if (res==Solver::Unknown) {
@@ -878,11 +909,20 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   // the value it has been fixed at, we should take this as a nice
   // hint to just use the single constraint instead of all the binary
   // search ones. If that makes sense.
+
+  Instruction* ins;
+  std::string str;
+  llvm::raw_string_ostream string_stream(str);
+  getLastNonKleeInternalInstruction(current, &ins);
+
+
   if (res==Solver::True) {
     if (!isInternal) {
       if (pathWriter) {
         current.pathOS << "1";
+        if (current.strPathOS) *(current.strPathOS) << "1\tat " << ii.file << ":" << ii.line << "\t" << *ins << "\t" << condition << "\n";
       }
+      
     }
 
     return StatePair(&current, 0);
@@ -890,6 +930,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     if (!isInternal) {
       if (pathWriter) {
         current.pathOS << "0";
+        if (current.strPathOS) *(current.strPathOS) << "0\tat " << ii.file << ":" << ii.line << "\t" << *ins << "\t" << condition << "\n";
       }
     }
 
@@ -950,6 +991,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
       if (!isInternal) {
         trueState->pathOS << "1";
         falseState->pathOS << "0";
+        if(trueState->strPathOS) *(trueState->strPathOS) << "1\tat " << ii.file << ":" << ii.line << "\t" << *ins << "\tcondition: " << condition << "\n";
+        if(falseState->strPathOS) *(falseState->strPathOS) << "0\tat " << ii.file << ":" << ii.line << "\t" << *ins << "\tcondition: " << condition << "\n";
       }
     }
     if (symPathWriter) {

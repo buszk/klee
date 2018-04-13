@@ -180,6 +180,8 @@ private:
   /// object.
   unsigned replayPosition;
 
+  const std::vector<bool> *replayUserPath;
+
   /// When non-null a list of "seed" inputs which will be used to
   /// drive execution.
   const std::vector<struct KTest *> *usingSeeds;  
@@ -477,6 +479,11 @@ public:
   virtual void setReplayPath(const std::vector<bool> *path) {
     assert(!replayKTest && "cannot replay both buffer and path");
     replayPath = path;
+    replayPosition = 0;
+  }
+
+  virtual void setReplayUserPath(const std::vector<bool> *path) {
+    replayUserPath = path;
     replayPosition = 0;
   }
 

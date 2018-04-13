@@ -179,6 +179,11 @@ namespace {
                  cl::desc("Specify a path file to replay"),
                  cl::value_desc("path file"));
 
+  cl::opt<std::string>
+  ReplayUserPathFile("replay-user-path",
+                 cl::desc("Specify a path file in user program to replay"),
+                 cl::value_desc("path file"));
+
   cl::list<std::string>
   SeedOutFile("seed-out");
 
@@ -426,6 +431,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         assert(o->bytes);
         std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
       }
+
+      std::ofstream ofs;
+      ofs.open(getOutputFilename(getTestFilename("trace", id)).c_str());
+      ofs << state.strPathOS->str();
+      ofs.close();
 
       if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
         klee_warning("unable to write output test case, losing it");
@@ -1301,6 +1311,13 @@ int main(int argc, char **argv, char **envp) {
     KleeHandler::loadPathFile(ReplayPathFile, replayPath);
   }
 
+  std::vector<bool> replayUserPath;
+  
+  if (ReplayUserPathFile != "") {
+    KleeHandler::loadPathFile(ReplayUserPathFile, replayUserPath);
+  }
+   
+
   Interpreter::InterpreterOptions IOpts;
   IOpts.MakeConcreteSymbolic = MakeConcreteSymbolic;
   KleeHandler *handler = new KleeHandler(pArgc, pArgv);
@@ -1319,6 +1336,10 @@ int main(int argc, char **argv, char **envp) {
 
   if (ReplayPathFile != "") {
     interpreter->setReplayPath(&replayPath);
+  }
+  
+  if (ReplayUserPathFile != "") {
+   interpreter->setReplayUserPath(&replayUserPath);
   }
 
   char buf[256];

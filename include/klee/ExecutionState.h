@@ -118,6 +118,10 @@ public:
   /// taken to reach/create this state
   TreeOStream symPathOS;
 
+  TreeOStream usrPathOS;
+
+  std::string pathStr;
+  llvm::raw_string_ostream *strPathOS;
   /// @brief Counts how many instructions were executed since the last new
   /// instruction was covered.
   unsigned instsSinceCovNew;
