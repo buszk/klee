@@ -86,6 +86,7 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <ctime>
 
 #include <sys/mman.h>
 
@@ -783,7 +784,16 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   if (isSeeding)
     timeout *= it->second.size();
   solver->setTimeout(timeout);
+  clock_t begin=0;
+  if (replayUserPath) {
+      begin = std::clock();
+  }
   bool success = solver->evaluate(current, condition, res);
+  if (replayUserPath) {
+      clock_t end = std::clock();
+      float elapsed_secs = float(end - begin)/ CLOCKS_PER_SEC;
+      current.solverTimes.push_back(elapsed_secs);
+  }
   solver->setTimeout(0);
   if (!success) {
     current.pc = current.prevPC;
@@ -814,30 +824,63 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
         }
       }
     } else if (replayUserPath && !isInternal) {
-      std::string posix("POSIX"), uclibc("uclibc"), runtime("runtime");
-      if (ii.file.find(posix) == std::string::npos && ii.file.find(uclibc) == std::string::npos && ii.file.find(runtime) == std::string::npos) {
-        // current branch is in user defined files
+      bool debug = false;
+      std::string posix("POSIX"), uclibc("uclibc"), runtime("runtime"), libc_string("libc/string"), cmp("cmp.");
+      if ((ii.file.find(posix) == std::string::npos && ii.file.find(uclibc) == std::string::npos &&
+              ii.file.find(runtime) == std::string::npos) || 
+              (ii.file.find(libc_string) !=std::string::npos && ii.file.find(cmp)!=std::string::npos)) {
+        // current branch is in user defined files, or string func
+        if (replayPosition >= replayUserPath->size()) {
+            // end klee
+            klee_error("Replay reaches the end");
+        }
         bool branch = (*replayUserPath)[replayPosition++];
+        static int count = 0;
+        count ++;
         if (res == Solver::True) {
-          printf("%s:%d\n", ii.file.c_str(), ii.line);
-          assert(branch && "hit invalid branch in replay user path mode");
+          current.numConcChoice++;
+          if(debug)  printf("[concrete](%d:True)%s:%d\n", count, ii.file.c_str(), ii.line);
+          if (!branch){
+            std::string str;
+            llvm::raw_string_ostream a_string_stream(str);
+            a_string_stream << condition;
+            printf("condition: %s\n", a_string_stream.str().c_str());
+            assert(false && "hit invalid branch in replay user path mode. Expected true but get false");
+          }
         } else if (res == Solver::False) {
-          printf("%s:%d\n", ii.file.c_str(), ii.line);
-          assert(!branch && "hit invalid branch in replay user path mode");
+          current.numConcChoice++;
+          if(debug)  printf("[concrete](%d:False)%s:%d\n", count, ii.file.c_str(), ii.line);
+          if (branch){
+            std::string str;
+            llvm::raw_string_ostream a_string_stream(str);
+            a_string_stream << condition;
+            printf("condition: %s\n", a_string_stream.str().c_str());
+            assert(false && "hit invalid branch in replay user path mode. Expected false but get true");
+          }
         } else {
-          printf("[symbolic]%s:%d\n", ii.file.c_str(), ii.line);
+          current.numSymChoice++; 
           if (branch) {
+            if(debug)  printf("[symbolic](%d:True)%s:%d\n", count, ii.file.c_str(), ii.line);
             res = Solver::True;
             addConstraint(current, condition);
           } else {
+            if(debug)  printf("[symbolic](%d:False)%s:%d\n", count, ii.file.c_str(), ii.line);
             res = Solver::False;
             addConstraint(current, Expr::createIsZero(condition));
           }
         }
       } else {
         // current branch is in uclibc or POSIX
+        current.numLibChoice++;
+        if (res == Solver::True) {
+          if(debug)  printf("[lib_func](True)%s:%d\n", ii.file.c_str(), ii.line);    
+        }
+        else if (res == Solver::False) {
+          if(debug)  printf("[lib_func](False)%s:%d\n", ii.file.c_str(), ii.line);
+        }
         if (res == Solver::Unknown) {
-          // trivially assert True
+          // trivially assert True, but should be avoid
+          if(debug)  printf("[lib_func](Unknown::TRUE)%s:%d\n", ii.file.c_str(), ii.line);
           res = Solver::True;
           addConstraint(current, condition);
         }
@@ -3272,20 +3315,28 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
   if (SimplifySymIndices) {
+    double startTime = util::getWallTime();
     if (!isa<ConstantExpr>(address))
       address = state.constraints.simplifyExpr(address);
     if (isWrite && !isa<ConstantExpr>(value))
       value = state.constraints.simplifyExpr(value);
+    double diff = util::getWallTime() - startTime;
+    if (diff > 10)
+        printf("symbolic indices simplified in %f seconds\n", diff);
   }
 
   // fast path: single in-bounds resolution
   ObjectPair op;
   bool success;
   solver->setTimeout(coreSolverTimeout);
+  double startTime = util::getWallTime();
   if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
     address = toConstant(state, address, "resolveOne failure");
     success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
   }
+  double diff = util::getWallTime() - startTime;
+  if (diff > 10)
+      printf("memory inbound check in %f seconds\n", diff);
   solver->setTimeout(0);
 
   if (success) {
@@ -3313,7 +3364,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       const ObjectState *os = op.second;
       if (isWrite) {
         if (os->readOnly) {
-          terminateStateOnError(state, "memory error: object read only",
+          terminateStateOnError(state, "memory error: object read only (must be true)",
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
@@ -3334,22 +3385,36 @@ void Executor::executeMemoryOperation(ExecutionState &state,
 
   // we are on an error path (no resolution, multiple resolution, one
   // resolution with out of bounds)
+  //
+  // LAVA optimization
   
+  if (!isa<ConstantExpr>(address)) {
+    std::string Str;
+    llvm::raw_string_ostream info(Str);
+    info << address;
+    printf("Non-constant expr address: \n%s\n", info.str().c_str());
+  }
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
   bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(0);
+ 
   
   // XXX there is some query wasteage here. who cares?
+
   ExecutionState *unbound = &state;
+  std::vector<ref<Expr>> current_constraint;
   
+  int count = 0;
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
+    count ++;
     const MemoryObject *mo = i->first;
     const ObjectState *os = i->second;
     ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
     
     StatePair branches = fork(*unbound, inBounds, true);
+    current_constraint = (*unbound).constraints.getConstraints();
     ExecutionState *bound = branches.first;
 
     // bound can be 0 on failure or overlapped 
@@ -3364,6 +3429,12 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
+        if (!isa<ConstantExpr> (address)) {
+          std::string Str;
+          llvm::raw_string_ostream info(Str);
+          info << result;
+          printf("Mem read result: \n%s\n", info.str().c_str());
+        }
         bindLocal(target, *bound, result);
       }
     }
@@ -3372,9 +3443,13 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (!unbound)
       break;
   }
+  printf("Total number of Memory Object traversed: %d\n", count);
+  
   
   // XXX should we distinguish out of bounds and overlapped cases?
   if (unbound) {
+    // read out of bound. We remove this to speed up bug finding
+     state.constraints.setConstraints(current_constraint);
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {

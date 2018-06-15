@@ -398,11 +398,6 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 void KleeHandler::processTestCase(const ExecutionState &state,
                                   const char *errorMessage,
                                   const char *errorSuffix) {
-  if (errorMessage && OptExitOnError) {
-    m_interpreter->prepareForEarlyExit();
-    klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
-  }
-
   if (!NoOutput) {
     std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
     bool success = m_interpreter->getSymbolicSolution(state, out);
@@ -529,12 +524,37 @@ void KleeHandler::processTestCase(const ExecutionState &state,
          << elapsed_time << "s\n";
       delete f;
     }
+
+    if (ReplayUserPathFile != "") {
+      llvm::raw_ostream *f = openTestFile("data", id);
+      *f << "numSymChoice: " << state.numSymChoice << "\n";
+      *f << "numConcChoice: " << state.numConcChoice << "\n";
+      *f << "numLibChoice: " << state.numLibChoice << "\n";
+      *f << "solverTimes: [ ";
+      for (int i = 0; i < state.solverTimes.size(); i++) {
+        *f << state.solverTimes[i];
+        if (i != state.solverTimes.size() -1) {
+          *f << ","; 
+        }
+      }
+      *f << "]\n";
+      f->flush();
+      delete f;
+    }
+    double elapsed_time = util::getWallTime() - start_time;
+    printf("Time to generate test case: %.2fs\n", elapsed_time);
+  }  
+
+  if (errorMessage && OptExitOnError) {
+    m_interpreter->prepareForEarlyExit();
+    klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
   }
 }
 
   // load a .path file
 void KleeHandler::loadPathFile(std::string name,
                                      std::vector<bool> &buffer) {
+
   std::ifstream f(name.c_str(), std::ios::in | std::ios::binary);
 
   if (!f.good())

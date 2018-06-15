@@ -69,6 +69,8 @@ ExecutionState::ExecutionState(KFunction *kf) :
     queryCost(0.), 
     weight(1),
     depth(0),
+    
+    numSymChoice(0),
 
     instsSinceCovNew(0),
     coveredNew(false),
@@ -79,7 +81,7 @@ ExecutionState::ExecutionState(KFunction *kf) :
 }
 
 ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
-    : constraints(assumptions), queryCost(0.), ptreeNode(0) {
+    : constraints(assumptions), queryCost(0.), ptreeNode(0), numSymChoice(0) {
   strPathOS = new llvm::raw_string_ostream(pathStr);
 }
 
@@ -116,6 +118,8 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     pathOS(state.pathOS),
     symPathOS(state.symPathOS),
 
+    numSymChoice(state.numSymChoice),
+
     instsSinceCovNew(state.instsSinceCovNew),
     coveredNew(state.coveredNew),
     forkDisabled(state.forkDisabled),
@@ -130,6 +134,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
   
   strPathOS = new llvm::raw_string_ostream(pathStr);
   *strPathOS << state.strPathOS -> str();
+  solverTimes = state.solverTimes;
 }
 
 ExecutionState *ExecutionState::branch() {

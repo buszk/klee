@@ -319,6 +319,7 @@ ExecutionState &BatchingSearcher::selectState() {
       (stats::instructions-lastStartInstructions)>instructionBudget) {
     if (lastState) {
       double delta = util::getWallTime()-lastStartTime;
+      klee_message("last state selected in %f second\n", delta);
       if (delta>timeBudget*1.1) {
         klee_message("increased time budget from %f to %f\n", timeBudget,
                      delta);

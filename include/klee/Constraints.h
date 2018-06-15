@@ -64,6 +64,14 @@ public:
   bool operator==(const ConstraintManager &other) const {
     return constraints == other.constraints;
   }
+
+  std::vector< ref<Expr> > getConstraints() const {
+    return constraints;
+  }
+
+  void setConstraints(std::vector< ref<Expr> > c) {
+    constraints = c;
+  }
   
 private:
   std::vector< ref<Expr> > constraints;
