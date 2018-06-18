@@ -3315,28 +3315,20 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
   if (SimplifySymIndices) {
-    double startTime = util::getWallTime();
     if (!isa<ConstantExpr>(address))
       address = state.constraints.simplifyExpr(address);
     if (isWrite && !isa<ConstantExpr>(value))
       value = state.constraints.simplifyExpr(value);
-    double diff = util::getWallTime() - startTime;
-    if (diff > 10)
-        printf("symbolic indices simplified in %f seconds\n", diff);
   }
 
   // fast path: single in-bounds resolution
   ObjectPair op;
   bool success;
   solver->setTimeout(coreSolverTimeout);
-  double startTime = util::getWallTime();
   if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
     address = toConstant(state, address, "resolveOne failure");
     success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
   }
-  double diff = util::getWallTime() - startTime;
-  if (diff > 10)
-      printf("memory inbound check in %f seconds\n", diff);
   solver->setTimeout(0);
 
   if (success) {
@@ -3386,14 +3378,16 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   // we are on an error path (no resolution, multiple resolution, one
   // resolution with out of bounds)
   //
-  // LAVA optimization
+  // lava optimization
   
+  /*
   if (!isa<ConstantExpr>(address)) {
     std::string Str;
     llvm::raw_string_ostream info(Str);
     info << address;
     printf("Non-constant expr address: \n%s\n", info.str().c_str());
   }
+  */
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
   bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
@@ -3414,7 +3408,6 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
     
     StatePair branches = fork(*unbound, inBounds, true);
-    current_constraint = (*unbound).constraints.getConstraints();
     ExecutionState *bound = branches.first;
 
     // bound can be 0 on failure or overlapped 
@@ -3428,14 +3421,36 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           wos->write(mo->getOffsetExpr(address), value);
         }
       } else {
-        ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
         if (!isa<ConstantExpr> (address)) {
+          /*
           std::string Str;
           llvm::raw_string_ostream info(Str);
+          info << address;
+          printf("original address: \n%s\n", info.str().c_str());
+          Str = "";
+          info << bound->constraints.back();
+          printf("new constraint: \n%s\n", info.str().c_str());
+          Str = "";
           info << result;
           printf("Mem read result: \n%s\n", info.str().c_str());
+          Str = "";
+          info << current_constraint[current_constraint.size()-1];
+          printf("newest constraint: \n%s\n", info.str().c_str());
+          Str = "";
+           */
+          double startTime = util::getWallTime();
+          ref<Expr> r1 = bound->constraints.simplifyAddressExpr(address);
+          double diff = util::getWallTime() - startTime;
+          //info << r1;
+          //printf("simplified address: \n%s\n", info.str().c_str());
+          printf("address simplified in %f second\n", diff);
+          ref<Expr> result = os->read(mo->getOffsetExpr(r1), type);
+          bindLocal(target, *bound, result);
+          bound->constraints.pop_back();
+        } else {
+          ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
+          bindLocal(target, *bound, result); 
         }
-        bindLocal(target, *bound, result);
       }
     }
 
@@ -3443,13 +3458,17 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (!unbound)
       break;
   }
-  printf("Total number of Memory Object traversed: %d\n", count);
+  //printf("Total number of Memory Object traversed: %d\n", count);
   
   
   // XXX should we distinguish out of bounds and overlapped cases?
   if (unbound) {
     // read out of bound. We remove this to speed up bug finding
-     state.constraints.setConstraints(current_constraint);
+     //state.constraints.setConstraints(current_constraint);
+    //std::string Str;
+    //llvm::raw_string_ostream info(Str);
+    //info << unbound->constraints.getConstraints()[unbound->constraints.getConstraints().size()-1];
+    //printf("unbound newst constraint: \n%s\n", info.str().c_str());
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {

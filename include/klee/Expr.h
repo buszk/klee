@@ -245,6 +245,8 @@ public:
   /// isZero - Is this a constant zero.
   bool isZero() const;
   
+  bool isOne() const;
+
   /// isTrue - Is this the true expression.
   bool isTrue() const;
 
@@ -1150,6 +1152,12 @@ public:
 inline bool Expr::isZero() const {
   if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(this))
     return CE->isZero();
+  return false;
+}
+
+inline bool Expr::isOne() const {
+  if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(this))
+    return CE->isOne();
   return false;
 }
   

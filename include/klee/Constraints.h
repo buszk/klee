@@ -43,6 +43,8 @@ public:
 
   ref<Expr> simplifyExpr(ref<Expr> e) const;
 
+  ref<Expr> simplifyAddressExpr(ref<Expr> e) const;
+
   void addConstraint(ref<Expr> e);
   
   bool empty() const {
@@ -71,6 +73,14 @@ public:
 
   void setConstraints(std::vector< ref<Expr> > c) {
     constraints = c;
+  }
+
+  void pop_back() {
+    constraints.pop_back();
+  }
+
+  ref<Expr> back() {
+    return constraints.back();
   }
   
 private:

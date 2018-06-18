@@ -12,11 +12,13 @@
 #include "klee/util/ExprPPrinter.h"
 #include "klee/util/ExprVisitor.h"
 #include "klee/Internal/Module/KModule.h"
+#include "klee/Expr.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
 
 #include <map>
+#include <queue>
 
 using namespace klee;
 
@@ -97,6 +99,86 @@ void ConstraintManager::simplifyForValidConstraint(ref<Expr> e) {
   // XXX 
 }
 
+ref<Expr> ConstraintManager::simplifyAddressExpr(ref<Expr> e) const {
+  if (isa<ConstantExpr>(e))
+    return e;
+  if (constraints.size() < 1)
+    return e;
+  std::map< ref<Expr>, ref<Expr> > equalities;
+  ref<Expr> constraint = constraints[constraints.size() - 1];
+  if (const EqExpr *ee = dyn_cast<EqExpr>(constraint)) {
+    if (isa<ConstantExpr>(ee->left)) {
+      equalities.insert(std::make_pair(ee->right, ee->left));
+    } else {
+      equalities.insert(std::make_pair(constraint, ConstantExpr::alloc(1, Expr::Bool)));
+    }
+  } else if (const UltExpr *ue = dyn_cast<UltExpr> (constraint)) {
+    if (isa<ConstantExpr>(ue->right)) {
+      if (ue->right->isOne()) {
+        equalities.insert(std::make_pair(ue->left, ConstantExpr::create(0, 64)));  
+      } 
+      else {
+        std::queue<ref<Expr>> search_queue;
+        search_queue.push(ue->left);
+        unsigned int count = 0;
+        while (!search_queue.empty()) {
+          ref<Expr> cur = search_queue.front();
+          search_queue.pop();
+          /*std::string Str;
+          llvm::raw_string_ostream info(Str);
+          info << cur;
+          printf("Searching node:\n%s\n", info.str().c_str());*/
+          if (const ConstantExpr *ce = dyn_cast<ConstantExpr>(cur.get())) {
+            continue;
+          }
+          else if (const ReadExpr *re = dyn_cast<ReadExpr>(cur.get())) {
+            continue;
+          }
+          else if (const ZExtExpr *ue = dyn_cast<ZExtExpr>(cur.get())) {
+            search_queue.push(ue->getKid(0));
+          }
+          else if (const MulExpr *me = dyn_cast<MulExpr>(cur.get())) {
+          //std::string Str;
+          //llvm::raw_string_ostream info(Str);
+          //info << cur ;
+          //printf("Mul searching:\n%s\n", info.str().c_str());
+          //Str = "";
+            if (const ZExtExpr *zee = dyn_cast<ZExtExpr>(me->right)) {
+              //info << *zee;
+              //printf("Mul(ZExt()) searching:\n%s\n", info.str().c_str());
+              //Str = "";
+              if (const EqExpr *eqe = dyn_cast<EqExpr>(zee->getKid(0))){
+                //info << *eqe;
+                //printf("Mul(ZExt(Eq())) searching:\n%s\n", info.str().c_str());
+                if (me->left == eqe->right) {
+                  // lava: should add something to make this always true
+                  equalities.insert(std::make_pair((cur.get()), ConstantExpr::create(0, 32)));
+                  //printf("Equality inserted\n");
+                  break;
+                }
+              }
+            }
+            search_queue.push(me->left);
+            search_queue.push(me->right);
+          }
+          else if (const BinaryExpr *be = dyn_cast<BinaryExpr>(cur.get())) {
+            search_queue.push(be->left);
+            search_queue.push(be->right);
+          } else {
+            //std::string Str;
+            //llvm::raw_string_ostream info(Str);
+            //info << cur ;
+            //printf("searching:\n%s\n", info.str().c_str());
+            //Str = "";
+            //printf("Unhandle case: %d\n", ++count);
+          }
+        }
+      }
+    }
+  }
+  return ExprReplaceVisitor2(equalities).visit(e);
+}
+
 ref<Expr> ConstraintManager::simplifyExpr(ref<Expr> e) const {
   if (isa<ConstantExpr>(e))
     return e;
@@ -112,10 +194,10 @@ ref<Expr> ConstraintManager::simplifyExpr(ref<Expr> e) const {
       } else {
         equalities.insert(std::make_pair(*it,
                                          ConstantExpr::alloc(1, Expr::Bool)));
-      }
+      }  
     } else {
       equalities.insert(std::make_pair(*it,
-                                       ConstantExpr::alloc(1, Expr::Bool)));
+                                         ConstantExpr::alloc(1, Expr::Bool)));
     }
   }
 
