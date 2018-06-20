@@ -2947,13 +2947,16 @@ void Executor::terminateStateOnError(ExecutionState &state,
                                      enum TerminateReason termReason,
                                      const char *suffix,
                                      const llvm::Twine &info) {
+
   std::string message = messaget.str();
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
+  static std::set< std::pair<std::string, int> > emittedLines; 
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
   
   if (EmitAllErrors ||
-      emittedErrors.insert(std::make_pair(lastInst, message)).second) {
+      (emittedErrors.insert(std::make_pair(lastInst, message)).second &&
+       emittedLines.insert(std::make_pair(ii.file, ii.line)).second)) {
     if (ii.file != "") {
       klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
     } else {
@@ -3472,8 +3475,10 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
+      double startTime = util::getWallTime();
       terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
                             NULL, getAddressInfo(*unbound, address));
+      printf("State terminate in %f second.\n", util::getWallTime() - startTime);
     }
   }
 }
