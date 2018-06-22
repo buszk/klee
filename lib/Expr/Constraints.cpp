@@ -154,6 +154,8 @@ ref<Expr> ConstraintManager::simplifyAddressExpr(ref<Expr> e) const {
                   // lava: should add something to make this always true
                   equalities.insert(std::make_pair((cur.get()), ConstantExpr::create(0, 32)));
                   //printf("Equality inserted\n");
+                  constraints.pop_back();
+                  constraints.add(EqExpr::create(cur, ConstantExpr::create(0, cur->getWidth())));
                   break;
                 }
               }

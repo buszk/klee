@@ -3449,7 +3449,6 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           printf("address simplified in %f second\n", diff);
           ref<Expr> result = os->read(mo->getOffsetExpr(r1), type);
           bindLocal(target, *bound, result);
-          bound->constraints.pop_back();
         } else {
           ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
           bindLocal(target, *bound, result); 
