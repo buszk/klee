@@ -99,7 +99,7 @@ void ConstraintManager::simplifyForValidConstraint(ref<Expr> e) {
   // XXX 
 }
 
-ref<Expr> ConstraintManager::simplifyAddressExpr(ref<Expr> e) const {
+ref<Expr> ConstraintManager::simplifyAddressExpr(ref<Expr> e) {
   if (isa<ConstantExpr>(e))
     return e;
   if (constraints.size() < 1)
@@ -155,7 +155,7 @@ ref<Expr> ConstraintManager::simplifyAddressExpr(ref<Expr> e) const {
                   equalities.insert(std::make_pair((cur.get()), ConstantExpr::create(0, 32)));
                   //printf("Equality inserted\n");
                   constraints.pop_back();
-                  constraints.add(EqExpr::create(cur, ConstantExpr::create(0, cur->getWidth())));
+                  constraints.push_back(EqExpr::create(ConstantExpr::create(0, cur->getWidth()), cur));
                   break;
                 }
               }

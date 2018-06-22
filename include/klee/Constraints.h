@@ -43,7 +43,7 @@ public:
 
   ref<Expr> simplifyExpr(ref<Expr> e) const;
 
-  ref<Expr> simplifyAddressExpr(ref<Expr> e) const;
+  ref<Expr> simplifyAddressExpr(ref<Expr> e) ;
 
   void addConstraint(ref<Expr> e);
   
