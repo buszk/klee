@@ -530,14 +530,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       *f << "numSymChoice: " << state.numSymChoice << "\n";
       *f << "numConcChoice: " << state.numConcChoice << "\n";
       *f << "numLibChoice: " << state.numLibChoice << "\n";
-      *f << "solverTimes: [ ";
-      for (int i = 0; i < state.solverTimes.size(); i++) {
-        *f << state.solverTimes[i];
-        if (i != state.solverTimes.size() -1) {
-          *f << ","; 
-        }
-      }
-      *f << "]\n";
+      *f << "totalSolverTime: " << state.totalSolverTime << "\n";
+      *f << "totalSolverCount: " << state.totalSolverCount << "\n";
       f->flush();
       delete f;
     }

@@ -118,11 +118,12 @@ public:
   /// taken to reach/create this state
   TreeOStream symPathOS;
 
-  int numSymChoice;
-  int numConcChoice;
-  int numLibChoice;
+  long numSymChoice;
+  long numConcChoice;
+  long numLibChoice;
 
-  std::vector<float> solverTimes;
+  double totalSolverTime;
+  long totalSolverCount;
   
   TreeOStream usrPathOS;
 

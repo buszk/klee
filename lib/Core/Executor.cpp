@@ -792,7 +792,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   if (replayUserPath) {
       clock_t end = std::clock();
       float elapsed_secs = float(end - begin)/ CLOCKS_PER_SEC;
-      current.solverTimes.push_back(elapsed_secs);
+      current.totalSolverTime += elapsed_secs;
+      current.totalSolverCount ++;
   }
   solver->setTimeout(0);
   if (!success) {
